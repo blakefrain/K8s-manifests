@@ -1,0 +1,128 @@
+---
+
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: portworx-sc-pihole
+provisioner: kubernetes.io/portworx-volume
+parameters:
+  repl: "1"
+
+---
+
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: pihole-dnsmasq-pvc
+spec:
+  storageClassName: portworx-sc-pihole
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: pihole-etc-pvc
+spec:
+  storageClassName: portworx-sc-pihole
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pihole
+  labels:
+    app: pihole
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pihole
+  template:
+    metadata:
+      labels:
+        app: pihole
+        name: pihole
+    spec:
+      containers:
+      - name: pihole
+        image: pihole/pihole:latest
+        imagePullPolicy: Always
+        env:
+        - name: TZ
+          value: "America/New_York"
+        - name: WEBPASSWORD
+          value: "password"
+        - name: DNS1
+          value: "1.1.1.1"
+        - name: DNS2
+          value: "1.0.0.1"
+        - name: DNSSEC
+          value: "true"
+        volumeMounts:
+        - mountPath: "/etc/pihole"
+          name: pihole-etc-volume
+        - mountPath: "/etc/dnsmasq.d"
+          name: pihole-dnsmasq-volume
+      volumes:
+      - name: pihole-etc-volume
+        persistentVolumeClaim:
+          claimName: pihole-etc-pvc
+      - name: pihole-dnsmasq-volume
+        persistentVolumeClaim:
+          claimName: pihole-dnsmasq-pvc
+      nodeSelector:
+        portworx: "true"
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: pihole-tcp
+  annotations:
+    metallb.universe.tf/allow-shared-ip: pihole
+spec:
+  selector:
+    app: pihole
+  ports:
+  - port: 8000
+    targetPort: 80
+    name: pihole-admin
+  - port: 53
+    targetPort: 53
+    protocol: TCP
+    name: dns-tcp
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+  loadBalancerIP: 10.0.10.161
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: pihole-udp
+  annotations:
+    metallb.universe.tf/allow-shared-ip: pihole
+spec:
+  selector:
+    app: pihole
+  ports:
+  - port: 53
+    targetPort: 53
+    protocol: UDP
+    name: dns-udp
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+  loadBalancerIP: 10.0.10.161

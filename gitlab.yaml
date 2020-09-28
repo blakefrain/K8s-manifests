@@ -1,0 +1,119 @@
+---
+
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: portworx-sc-gitlab
+provisioner: kubernetes.io/portworx-volume
+parameters:
+  repl: "1"
+
+---
+
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: gitlab-data-pvc
+spec:
+  storageClassName: portworx-sc-gitlab
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi  
+
+---
+
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: gitlab-etc-pvc
+spec:
+  storageClassName: portworx-sc-gitlab
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 500Mi
+
+---
+
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: gitlab-log-pvc
+spec:
+  storageClassName: portworx-sc-gitlab
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 500Mi
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitlab
+  labels:
+    app: gitlab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gitlab
+  template:
+    metadata:
+      labels:
+        app: gitlab
+        name: gitlab
+    spec:
+      containers:
+      - name: gitlab
+        image: gitlab/gitlab-ce:latest
+        imagePullPolicy: Always
+        env:
+        - name: GITLAB_OMNIBUS_CONFI
+          value: "external_url 'https://gitlab.beflab.org'"
+        volumeMounts:
+        - mountPath: "/etc/gitlab"
+          name: gitlab-etc-volume
+        - mountPath: "/var/log/gitlab"
+          name: gitlab-log-volume
+        - mountPath: "/var/opt/gitlab"
+          name: gitlab-data-volume
+      volumes:
+      - name: gitlab-etc-volume
+        persistentVolumeClaim:
+          claimName: gitlab-etc-pvc
+      - name: gitlab-log-volume
+        persistentVolumeClaim:
+          claimName: gitlab-log-pvc
+      - name: gitlab-data-volume
+        persistentVolumeClaim:
+          claimName: gitlab-data-pvc
+      nodeSelector:
+        portworx: "true"
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitlab-svc
+spec:
+  selector:
+    app: gitlab
+  ports:
+  - port: 80
+    targetPort: 80
+    name: gitlab-http
+  - port: 443
+    targetPort: 443
+    name: gitlab-https
+  - port: 22
+    targetPort: 22
+    name: gitlab-ssh
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+

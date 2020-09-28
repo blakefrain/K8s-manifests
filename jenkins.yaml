@@ -1,0 +1,76 @@
+---
+
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: portworx-sc-jenkins
+provisioner: kubernetes.io/portworx-volume
+parameters:
+  repl: "1"
+
+---
+
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: jenkins-data-pvc
+spec:
+  storageClassName: portworx-sc-jenkins
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi  
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jenkins
+  labels:
+    app: jenkins
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jenkins
+  template:
+    metadata:
+      labels:
+        app: jenkins
+        name: jenkins
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+      - name: jenkins
+        image: jenkins/jenkins:lts
+        imagePullPolicy: Always
+        volumeMounts:
+        - mountPath: "/var/jenkins_home"
+          name: jenkins-data-volume
+      volumes:
+      - name: jenkins-data-volume
+        persistentVolumeClaim:
+          claimName: jenkins-data-pvc
+      nodeSelector:
+        portworx: "true"
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: jenkins
+spec:
+  selector:
+    app: jenkins
+  ports:
+  - port: 80
+    targetPort: 8080
+    name: jenkins-http
+  - port: 50000
+    targetPort: 50000
+    name: jenkins
+  externalTrafficPolicy: Local
+  type: LoadBalancer

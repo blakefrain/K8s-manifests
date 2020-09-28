@@ -1,0 +1,100 @@
+---
+
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: portworx-sc-phpipam
+provisioner: kubernetes.io/portworx-volume
+parameters:
+  repl: "1"
+
+---
+
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: phpipam-pvc
+spec:
+  storageClassName: portworx-sc-phpipam
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: phpipam
+  labels:
+    app: phpipam
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: phpipam
+  template:
+    metadata:
+      labels:
+        app: phpipam
+        name: phpipam
+    spec:
+      containers:
+      - name: phpipam-web
+        image: phpipam/phpipam-www:latest
+        imagePullPolicy: Always
+        env:
+        - name: TZ
+          value: "America/New_York"
+        - name: IPAM_DATABASE_HOST
+          value: "127.0.0.1"
+        - name: IPAM_DATABASE_PASS
+          value: "password"
+        - name: IPAM_DATABASE_WEBHOST
+          value: "%"
+      - name: phpipam-cron
+        image: phpipam/phpipam-cron:latest
+        imagePullPolicy: Always
+        env:
+        - name: TZ
+          value: "America/New_York"
+        - name: IPAM_DATABASE_HOST
+          value: "127.0.0.1"
+        - name: IPAM_DATABASE_PASS
+          value: "password"
+        - name: SCAN_INTERVAL
+          value: "1h"
+      - name: phpipam-mariadb
+        image: mariadb:latest
+        imagePullPolicy: Always
+        ports:
+          - containerPort: 3306
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          value: "password"
+        volumeMounts:
+        - mountPath: "/var/lib/mysql"
+          name: phpipam-volume
+      volumes:
+      - name: phpipam-volume
+        persistentVolumeClaim:
+          claimName: phpipam-pvc
+      nodeSelector:
+        portworx: "true"
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: phpipam-svc
+spec:
+  selector:
+    app: phpipam
+  ports:
+  - port: 80
+    targetPort: 80
+    name: phpipam-http
+  externalTrafficPolicy: Local
+  type: LoadBalancer

@@ -1,0 +1,80 @@
+---
+
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: portworx-sc-nextcloud
+provisioner: kubernetes.io/portworx-volume
+parameters:
+  repl: "1"
+
+---
+
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: nextcloud-data-pvc
+spec:
+  storageClassName: portworx-sc-nextcloud
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 500Mi  
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nextcloud
+  labels:
+    app: nextcloud
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nextcloud
+  template:
+    metadata:
+      labels:
+        app: nextcloud
+        name: nextcloud
+    spec:
+      containers:
+      - name: nextcloud
+        image: linuxserver/nextcloud
+        imagePullPolicy: Always
+        env:
+        - name: TZ
+          value: "America/New_York"
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        volumeMounts:
+        - mountPath: "/config"
+          name: nextcloud-data-volume
+      volumes:
+      - name: nextcloud-data-volume
+        persistentVolumeClaim:
+          claimName: nextcloud-data-pvc
+      nodeSelector:
+        portworx: "true"
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: nextcloud
+spec:
+  selector:
+    app: nextcloud
+  ports:
+  - port: 443
+    targetPort: 443
+    name: nextcloud-http
+    name: nextcloud
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+

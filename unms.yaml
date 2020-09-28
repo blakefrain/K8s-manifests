@@ -1,0 +1,100 @@
+---
+
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: portworx-sc-unms
+provisioner: kubernetes.io/portworx-volume
+parameters:
+  repl: "1"
+
+---
+
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: unms-config-pvc
+spec:
+  storageClassName: portworx-sc-unms
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 500Mi  
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: unms
+  labels:
+    app: unms
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: unms
+  template:
+    metadata:
+      labels:
+        app: unms
+        name: unms
+    spec:
+      containers:
+      - name: unms
+        image: nico640/docker-unms:latest
+        imagePullPolicy: Always
+        env:
+        - name: TZ
+          value: "America/New_York"
+        volumeMounts:
+        - mountPath: "/config"
+          name: unms-config-volume
+      volumes:
+      - name: unms-config-volume
+        persistentVolumeClaim:
+          claimName: unms-config-pvc
+      nodeSelector:
+        portworx: "true"
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: unms-tcp
+  annotations:
+    metallb.universe.tf/allow-shared-ip: unms
+spec:
+  selector:
+    app: unms
+  ports:
+  - port: 80
+    targetPort: 80
+    name: unms-http
+  - port: 443
+    targetPort: 443
+    name: unms-https
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+  loadBalancerIP: 10.0.10.164
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: unms-udp
+  annotations:
+    metallb.universe.tf/allow-shared-ip: unms
+spec:
+  selector:
+    app: unms
+  ports:
+  - port: 2055
+    targetPort: 2055
+    protocol: UDP
+    name: unms-com-udp
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+  loadBalancerIP: 10.0.10.164
